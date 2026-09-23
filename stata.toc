@@ -1,0 +1,6 @@
+v 3
+d Ghosh-Lin repeated events analysis with terminal events
+d The ghoshlin command prepares the dataset to fit a Ghosh-Lin repeated events survival model accounting for competing/terminal events.
+d 
+d Program by Barna Szabó-Söderberg
+p ghoshlin Dataset preparation to fit a Ghosh-Lin model.
