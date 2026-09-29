@@ -64,7 +64,8 @@ after {cmd:ghoshlin}.
 The command {cmd:ghoshlin} transforms the dataset so that for each subject that experienced a terminal (competing) event, it will include weighted observations after the competing event to modify the risk set, as if the subject would 
 still be at risk despite the terminal event.
 If used on time to first event data (or by limiting the dataset to {opt maxevents(1)}), a Fine & Gray model is fit using {cmd: ghoshlin} and thereafter {cmd: stcox}. When used with repeated events data in a setup according to the Andersen-Gill model 
-(or Lin-Wei-Yang-Ying model which is the same but analyzed with the {opt vce(robust)} or {opt vce(cluster id)} option), the transformed dataset can be used to fit a Ghosh-Lin model.
+(or Lin-Wei-Yang-Ying model which is the same but analyzed with the {opt vce(robust)} or {opt vce(cluster id)} option), the transformed dataset can be used to fit a 
+{browse "https://www3.stat.sinica.edu.tw/statistica/j12n3/j12n31/j12n31.htm" :Ghosh-Lin model} using the IPCW method.
 {p_end}
 
 {pstd}

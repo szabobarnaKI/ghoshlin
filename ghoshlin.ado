@@ -93,7 +93,7 @@ program define ghoshlin
 			sort `time_max'
 			generate cens_at_risk0=. // number of subjects at risk for being censored at this time point
 			generate censored=. // number of subjects censored until next time index, among those at risk here
-			generate double inv_cens_prob=. // variable for the calculated censoring probability for the time interval ending at time_max
+			generate double cens_interval_surv=. // variable for the calculated censoring probability for the time interval ending at time_max
 			tempname time_index time_index_1
 			forvalues i=1/`=_N' {
 				scalar `time_index'=`time_max'[`i']
@@ -105,9 +105,9 @@ program define ghoshlin
 			}
 			drop if censored==0 & `time_max'!=0
 			//**********************************************
-			replace inv_cens_prob=1-censored/cens_at_risk0
+			replace cens_interval_surv=1-censored/cens_at_risk0
 			//**********************************************
-			generate double ln_ipc=log(inv_cens_prob)
+			generate double ln_ipc=log(cens_interval_surv)
 			
 			generate index=_n
 			tempname time_index_count
