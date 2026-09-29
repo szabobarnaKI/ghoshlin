@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 1.0  18aug2025}{...}
+{* *! version 1.2  30sep2026}{...}
 {viewerjumpto "Syntax" "ghoshlin##syntax"}{...}
 {viewerjumpto "Description" "ghoshlin##description"}{...}
 {viewerjumpto "Model considerations" "ghoshlin##considerations"}{...}
@@ -9,7 +9,7 @@
 {title:Title}
 
 {phang}
-{cmd:ghoshlin} {hline 2} Competing risk adjustment for time to event data, using inverse probability of censoring weights (as described by Geskus).
+{cmd:ghoshlin} {hline 2} Competing risk adjustment for time to event data, using inverse probability of censoring weights (as described by Ghosh-Lin 2002).
 
 
 {marker syntax}{...}
@@ -32,6 +32,7 @@ It needs to be enclosed in quotes or compound double quotes.{p_end}
 {synopt:{opt keep}}Variables kept during dataset transformation.{p_end}
 {synopt:{opt matchonly}}Variables kept during dataset transformation, but without filling the gaps.{p_end}
 
+
 {marker description}{...}
 {title:Description}
 
@@ -41,9 +42,16 @@ The transformed dataset is stored in a new frame defined by the {opt frame()} op
 {p_end}
 
 {pstd}
-{cmd:ghoshlin} supports only right censored data without gaps, and without left truncation.
-The data has to be stset before calling {cmd: ghoshlin}, with both target and competing events as failures.
-This command recognizes whether the data is multiply imputed, and acts accordingly. Be careful though, as only imputed covariates will be kept, but not imputed events.
+{cmd:ghoshlin} supports right censored data and left truncation, handled through stset. Gaps are not checked for and are ignored. 
+{cmd: ghoshlin} will still run if time gaps exist in the dataset, making the indirect assumption that no terminal/competing event can occur during gap times. 
+This is true if terminal events occur only at the latest follow-up time (e.g. death), but may be a false assumption if follow-up is possible after a competing event 
+(e.g. preventive breast removal prevents the occurrence of breast cancer, but is not lethal, thus follow-up after a potentially uncaptured breast removal is possible). 
+It is the user's responsibility to consider whether this assumption can safely be accepted or not.
+{p_end}
+
+{pstd}
+The data has to be stset before calling {cmd: ghoshlin}, with both target and competing events as failures. 
+This command recognizes whether the data is multiply imputed, and acts accordingly. Be careful though, as only imputed covariates will be kept, but not imputed events or follow-up times.
 {p_end}
 
 {pstd}
@@ -60,20 +68,24 @@ after {cmd:ghoshlin}.
 
 {marker considerations}{...}
 {title:Model considerations}
+
 {pstd}
 The command {cmd:ghoshlin} transforms the dataset so that for each subject that experienced a terminal (competing) event, it will include weighted observations after the competing event to modify the risk set, as if the subject would 
 still be at risk despite the terminal event.
-If used on time to first event data (or by limiting the dataset to {opt maxevents(1)}), a Fine & Gray model is fit using {cmd: ghoshlin} and thereafter {cmd: stcox}. When used with repeated events data in a setup according to the Andersen-Gill model 
+If used on time to first event data (or by limiting the dataset to {opt maxevents(1)}), using {cmd: ghoshlin} and subsequently fitting {cmd: stcox} results in a Fine & Gray model (as described by 
+{browse "https://pubmed.ncbi.nlm.nih.gov/20377575/" :Geskus}). 
+When used with repeated events data in a setup according to the Andersen-Gill model 
 (or Lin-Wei-Yang-Ying model which is the same but analyzed with the {opt vce(robust)} or {opt vce(cluster id)} option), the transformed dataset can be used to fit a 
 {browse "https://www3.stat.sinica.edu.tw/statistica/j12n3/j12n31/j12n31.htm" :Ghosh-Lin model} using the IPCW method.
 {p_end}
 
 {pstd}
-Compared to {cmd: stcrreg}, {cmd: ghoshlin} provides substantial speed improvement for Fine & Gray analysis. Using the Stata example dataset for hypoxia (as described in {cmd: stcrreg}), 
-the Stata built-in model takes 11.68sec on the author´s test computer, while the time for dataset conversion using {cmd: ghoshlin} and subsequent analysis using {cmd: stcox} takes only 0.51sec.
-The time improvement is even larger for multiple imputation data. The command results has been validated against Stata's built-in command {cmd:stcrreg} for time to first event, 
+Compared to {cmd: stcrreg}, {cmd: ghoshlin} provides substantial speed improvement for Fine & Gray analysis. Directly after launching Stata, using the Stata example dataset for hypoxia (as described in {help stcrreg}), 
+the Stata built-in model takes 2.17sec on the author´s test computer, while the time for dataset conversion using {cmd: ghoshlin} and subsequent analysis using {cmd: stcox} takes only 0.07sec.
+The time improvement is even larger for datasets with multiple imputation. The command results has been validated against Stata's built-in command {cmd:stcrreg} for time to first event, 
 and against the R implementation of the Ghosh-Lin model using the HF-ACTION dataset published in the R package "mets".
 {p_end}
+
 
 {marker options}{...}
 {title:Options}
@@ -98,12 +110,20 @@ and against the R implementation of the Ghosh-Lin model using the HF-ACTION data
 {phang}
 {opt matchonly} Variables kept during dataset transformation, that should not be filled in. If matchonly() contains variables not listed in keep(), those will not be kept.
 
+
 {marker remarks}{...}
 {title:Remarks on factor variable notation}
+
 {pstd}
 In the {opt keep()} and {opt matchonly()} options, both regular variable names and factor variable notations are allowed. {cmd: ghoshlin} interprets them by removing the factor variable notation, thus you may use both forms without any concern.
 {p_end}
 
+
+{title:AI disclosure}
+
+{pstd}
+This command was originally developed by a human. Claude AI with human supervision was used for speed-optimization, and to correct the handling of left truncation and ties. 
+The final version of {cmd: ghoshlin} has then been extensively tested and validated by a human.
 
 
 {marker examples}{...}
