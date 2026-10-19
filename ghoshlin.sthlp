@@ -37,28 +37,27 @@ It needs to be enclosed in quotes or compound double quotes.{p_end}
 {title:Description}
 
 {pstd}
-{cmd:ghoshlin} performs competing risk adjustment for time to event data, somewhat similarly to the user-written {cmd:stcrprep} command.
-The transformed dataset is stored in a new frame defined by the {opt frame()} option.
+{cmd:ghoshlin} performs competing risk adjustment for time to event data, somewhat similarly to the user-written {cmd:stcrprep} 
+command. The transformed dataset is stored in a new frame defined by the {opt frame()} option.
 {p_end}
 
 {pstd}
-{cmd:ghoshlin} supports right censored data and left truncation, handled through stset. Gaps are not checked for and are ignored. 
-{cmd: ghoshlin} will still run if time gaps exist in the dataset, making the indirect assumption that no terminal/competing event can occur during gap times. 
-This is true if terminal events occur only at the latest follow-up time (e.g. death), but may be a false assumption if follow-up is possible after a competing event 
-(e.g. preventive breast removal prevents the occurrence of breast cancer, but is not lethal, thus follow-up after a potentially uncaptured breast removal is possible). 
-It is the user's responsibility to consider whether this assumption can safely be accepted or not.
+{cmd:ghoshlin} supports right censored data and left truncation, handled through stset. Gaps are not checked for and are 
+ignored. {cmd: ghoshlin} will still run if time gaps exist in the dataset, making the indirect assumption that no terminal/competing event can occur during gap 
+times. This is true if terminal events occur only at the latest follow-up time (e.g. death), but may be a false assumption if follow-up is possible after a competing 
+event (e.g. preventive breast removal prevents the occurrence of breast cancer, but is not lethal, thus follow-up after a potentially uncaptured breast removal is 
+possible). It is the user's responsibility to consider whether this assumption can safely be accepted or not.
 {p_end}
 
 {pstd}
-The data has to be stset before calling {cmd: ghoshlin}, with both target and competing events as failures. 
-This command recognizes whether the data is multiply imputed, and acts accordingly. Be careful though, as only imputed covariates will be kept, but not imputed events or follow-up times.
+The data has to be stset before calling {cmd: ghoshlin}, with both target and competing events as 
+failures. This command recognizes whether the data is multiply imputed, and acts accordingly. Be careful though, as only imputed covariates will be kept, but not imputed events or follow-up times.
 {p_end}
 
 {pstd}
 For successful conversion, you need to stset your data with the id() option before calling {cmd:ghoshlin}. Note that in the current version of Stata, you can not stset with time varying weights, thus, after {cmd:ghoshlin} 
-the data is stset without the use of the {opt id} option.
-Therefore, it is important to use cluster variance estimation ({opt vce(cluster patient_id)}) or robust variance ({opt vce(robust)}) when fitting stcox-based models to the transformed dataset. 
-The use of {opt vce(cluster id)} is preferred as it provides the most similar results compared to {help stcrreg} (no difference in standard errors up to 4 digits).{p_end}
+the data is stset without the use of the {opt id} option. Therefore, it is important to use cluster variance estimation ({opt vce(cluster patient_id)}) or robust variance ({opt vce(robust)}) when fitting stcox-based 
+models to the transformed dataset. The use of {opt vce(cluster id)} is preferred as it provides the most similar results compared to {help stcrreg} (no difference in standard errors up to 4 digits).{p_end}
 
 {pstd}
 The command automatically calls {help stset} or {help mi stset} after dataset transformation, there is no absolute need to do it manually. If you want to change st settings, you need to re-call {help stset} or {help mi stset} 
@@ -71,19 +70,27 @@ after {cmd:ghoshlin}.
 
 {pstd}
 The command {cmd:ghoshlin} transforms the dataset so that for each subject that experienced a terminal (competing) event, it will include weighted observations after the competing event to modify the risk set, as if the subject would 
-still be at risk despite the terminal event.
-If used on time to first event data (or by limiting the dataset to {opt maxevents(1)}), using {cmd: ghoshlin} and subsequently fitting {cmd: stcox} results in a Fine & Gray model (as described by 
-{browse "https://pubmed.ncbi.nlm.nih.gov/20377575/" :Geskus}). 
-When used with repeated events data in a setup according to the Andersen-Gill model 
+still be at risk despite the terminal 
+event. If used on time to first event data (or by limiting the dataset to {opt maxevents(1)}), using {cmd: ghoshlin} and subsequently fitting {cmd: stcox} results in a Fine & Gray model (as described by 
+{browse "https://pubmed.ncbi.nlm.nih.gov/20377575/" :Geskus}). When used with repeated events data in a setup according to the Andersen-Gill model 
 (or Lin-Wei-Yang-Ying model which is the same but analyzed with the {opt vce(robust)} or {opt vce(cluster id)} option), the transformed dataset can be used to fit a 
 {browse "https://www3.stat.sinica.edu.tw/statistica/j12n3/j12n31/j12n31.htm" :Ghosh-Lin model} using the IPCW method.
 {p_end}
 
 {pstd}
 Compared to {cmd: stcrreg}, {cmd: ghoshlin} provides substantial speed improvement for Fine & Gray analysis. Directly after launching Stata, using the Stata example dataset for hypoxia (as described in {help stcrreg}), 
-the Stata built-in model takes 2.17sec on the author´s test computer, while the time for dataset conversion using {cmd: ghoshlin} and subsequent analysis using {cmd: stcox} takes only 0.07sec.
-The time improvement is even larger for datasets with multiple imputation. The command results has been validated against Stata's built-in command {cmd:stcrreg} for time to first event, 
+the Stata built-in model takes 2.17sec on the author´s test computer, while the time for dataset conversion using {cmd: ghoshlin} and subsequent analysis using {cmd: stcox} takes only 
+0.07sec. The time improvement is even larger for datasets with multiple imputation. The command results has been validated against Stata's built-in command {cmd:stcrreg} for time to first event, 
 and against the R implementation of the Ghosh-Lin model using the HF-ACTION dataset published in the R package "mets".
+{p_end}
+
+{pstd}
+{ul:Time-varying covariates:} The command extends the at-risk time of subjects beyond the terminal events, until the estimated time of non-informative 
+censoring. The command itself cannot handle time-varying data beyond the terminal event on its own. Covariates that are independent from the subject (so-called exogenous variables such as season of the year, information on the president of the 
+country at a specific time period) can be measured and included appropriately, and need to be added manually after running {cmd:ghoshlin} (see the {opt matchonly} 
+option). For endogenous variables (those measured on the subject, such as blood pressure or the number of children), values observed at the terminal event may have had changed subsequently if the subject did not experience the terminal 
+event. Therefore, the last-value-carry-forward method used as default, and that works for time-non-varying covariates, gives potentially false results, and estimates are difficult to 
+interpret. Thus, the use of endogenous time-varying covariates is discouraged.
 {p_end}
 
 
@@ -96,7 +103,8 @@ and against the R implementation of the Ghosh-Lin model using the HF-ACTION data
 {opt frame} defines the name of a new frame for the transformed dataset. Use the suboption {it:replace} to optionally replace an existing frame.
 
 {phang}
-{opt failure} defines failures. E.g {it:failure(death_type==1)} where {it:death_type} is a variable taking the value of 1 if that subject experienced the event at interest (e.g CV death), death_type==2 for the competing absorbing event (e.g non-CV death) and death_type==0 for no event (censoring).
+{opt failure} defines failures. E.g {it:failure(death_type==1)} where {it:death_type} is a variable taking the value of 1 if that subject experienced the event at interest (e.g CV death), death_type==2 for the competing absorbing event 
+(e.g non-CV death) and death_type==0 for no event (censoring).
 
 {phang}
 {opt competing} defines competing risk events, using the same syntax as the {opt failure} option.
@@ -115,15 +123,16 @@ and against the R implementation of the Ghosh-Lin model using the HF-ACTION data
 {title:Remarks on factor variable notation}
 
 {pstd}
-In the {opt keep()} and {opt matchonly()} options, both regular variable names and factor variable notations are allowed. {cmd: ghoshlin} interprets them by removing the factor variable notation, thus you may use both forms without any concern.
+In the {opt keep()} and {opt matchonly()} options, both regular variable names and factor variable notations are 
+allowed.{cmd: ghoshlin} interprets them by removing the factor variable notation, thus you may use both forms without any concern.
 {p_end}
 
 
 {title:AI disclosure}
 
 {pstd}
-This command was originally developed by a human. Claude AI with human supervision was used for speed-optimization, and to correct the handling of left truncation and ties. 
-The final version of {cmd: ghoshlin} has then been extensively tested and validated by a human.
+This command was originally developed by a human. Claude AI with human supervision was used for speed-optimization, and to correct the handling of left truncation and 
+ties. The final version of {cmd: ghoshlin} has then been extensively tested and validated by a human.
 
 
 {marker examples}{...}
