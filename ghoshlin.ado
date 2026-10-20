@@ -1,12 +1,15 @@
 // program to perform competing risk adjustment on mi set data, 
-// according to Ghosh and Lin's IPCW method (2002), which coincides with
-// Geskus method (2011) for Fine-Gray models using time to first events only
+// according to Geskus method using inverse probability of censoring weights
 
 program define ghoshlin
 	version 16.1
-	syntax [anything] [if] [in], frame(string asis) failure(string) competing(string) [maxevents(integer 0) keep(varlist fv) matchonly(varlist fv)]
+	syntax [anything] [if] [in], frame(string asis) failure(string) competing(string) [maxevents(integer 0) keep(varlist fv) matchonly(varlist fv) noEXPandfw *]
 	local id="`_dta[st_id]'"
 	local tstop="`_dta[st_bt]'"
+	// weights declared to stset (fweight, pweight, ...): st_wv holds the weight
+	// variable/expression, empty if the data was stset without weights
+	local wexp="`_dta[st_wv]'"
+	if "`wexp'"=="" local wexp "1"
 	// if maxevents is not specified (<=0), change it to more than max observed events (number of rows is always more than max potential events)
 	if `maxevents'<=0 local maxevents=_N
 	
@@ -21,6 +24,38 @@ program define ghoshlin
 		assert "`i'"!="tstop"
 		assert "`i'"!="event"
 		assert "`i'"!="weight_c"
+		assert "`i'"!="repid"
+	}
+
+	// expandfw is ON by default and only applies to data stset with fweights; for
+	// any other data (no weights, pweights, ...) and for mi set data it is
+	// ignored. It is switched off with the option noexpandfw.
+	//
+	// Stata's syntax command names the macro of an option declared as
+	// "noEXPandfw" after the option WITHOUT the "no": the macro `expandfw'
+	// contains "noexpandfw" when the option was specified and nothing
+	// otherwise ([P] syntax). The positive form expandfw (a no-op, since it is
+	// the default) is therefore not declared, which would clash with that macro
+	// name, but accepted through the catch-all `options' macro.
+	local noexpand "`expandfw'"
+	local explicit ""
+	foreach o of local options {
+		if "`o'"=="expandfw" local explicit "expandfw"
+		else {
+			di as error "option `o' not allowed"
+			exit 198
+		}
+	}
+	if "`noexpand'"!="" & "`explicit'"!="" {
+		di as error "options expandfw and noexpandfw may not be combined."
+		exit 198
+	}
+	local doexpand ""
+	if "`noexpand'"=="" & "`_dta[st_wt]'"=="fweight" {
+		if "`mi_set'"=="mi" {
+			di as text "(note: frequency weights are not expanded for mi set data)"
+		}
+		else local doexpand "1"
 	}
 
 	if "`id'"=="" {
@@ -58,11 +93,12 @@ program define ghoshlin
 		generate double _old_t=_t
 		generate double _old_t0=_t0
 		generate _old_fail=(`failure')
+		generate double _old_w=(`wexp') // the stset weight (1 if none)
 		tempfile keepfile
 		quietly save `keepfile'
 		
 		// create a single row dataset for the last time point, with minimal data kept
-		tempname terminal_event time_max time_min failure_event reachmaxevent eventcount
+		tempname terminal_event time_max time_min failure_event reachmaxevent eventcount time_w wmin wmax
 
 		stgen `eventcount'=count0(`failure') // this contains the number of failures until the actual time interval´s end
 		drop if (`eventcount'>`maxevents') | (`eventcount'==`maxevents' & !(`failure'))
@@ -70,12 +106,26 @@ program define ghoshlin
 		stgen `reachmaxevent'=ever(`eventcount'==`maxevents')
 		stgen `terminal_event'=ever(`competing')
 		stgen double `time_max'=max(_t)
+		// entry (left-truncation) time: since gaps within a subject's spells
+		// are not a concern by design, the earliest _t0 across a subject's
+		// retained spells is that subject's actual stset entry time.
 		stgen double `time_min'=min(_t0)
+		// a subject's stset weight must be constant over follow-up: it is used
+		// both for the weighted censoring distribution and as a multiplier of
+		// the redistribution weights
+		stgen double `wmin'=min(_old_w)
+		stgen double `wmax'=max(_old_w)
+		quietly count if `wmin'!=`wmax'
+		if r(N)>0 {
+			di as error "ghoshlin requires stset weights that are constant within each subject."
+			error 198
+		}
+		generate double `time_w'=_old_w
 		generate `failure_event'=.
 		replace `failure_event'=(`failure') if `time_max'==_t
 
 		keep if `time_max'==_t
-		keep `id' `time_max' `time_min' `reachmaxevent' `terminal_event' `failure_event'
+		keep `id' `time_max' `time_min' `time_w' `reachmaxevent' `terminal_event' `failure_event'
 
 		// build the censoring-probability time grid and the inverse-probability-
 		// of-censoring weights entirely in Mata (ghoshlin_grid_weights, backed
@@ -93,7 +143,7 @@ program define ghoshlin
 		// distinct censoring times, a genuine Stata matrix would be capped
 		// by matsize (798 in Stata/IC, 11,000 in SE/MP, regardless of how
 		// matsize is set), while a Mata matrix is bounded only by memory.
-		ghoshlin_grid_weights `time_max' `time_min' `terminal_event' `failure_event'
+		ghoshlin_grid_weights `time_max' `time_min' `terminal_event' `failure_event' `time_w'
 
 		// reduce the dataset to subjects who need to remain in the risk set after a terminal event
 		keep if `reachmaxevent'==0 & `terminal_event'==1
@@ -120,9 +170,13 @@ program define ghoshlin
 		ghoshlin_fill_expanded `time_max' `expand_num' `newgrp', tstart(tstart) tstop(tstop) weight(weight_c)
 		capture mata drop ghoshlin__grid // free the Mata-resident grid now that it has been fully consumed
 		drop if weight_c==.
+		// a subject's redistribution weight is relative to their own censoring
+		// probability; multiply by their stset weight (constant per subject)
+		replace weight_c=weight_c*`time_w'
+		generate double _fw=`time_w' // stset weight, kept for expandfw
 
 		// cleanup
-		keep `id' tstart tstop weight_c
+		keep `id' tstart tstop weight_c _fw
 		order `id' weight_c tstart tstop
 		generate event=0
 	}
@@ -130,7 +184,7 @@ program define ghoshlin
 	// add all sub-observations from the original dataset, until the terminal events
 	quietly frame `framename': {
 		drop if tstart==0
-		append using `keepfile', keep(`id' _old_t0 _old_t _old_fail)
+		append using `keepfile', keep(`id' _old_t0 _old_t _old_fail _old_w)
 		
 		replace tstart=_old_t0 if tstart==.
 		replace tstop=_old_t if tstop==.
@@ -139,7 +193,11 @@ program define ghoshlin
 		drop if tstart==. | tstop==.
 		drop _old_t0 _old_t _old_fail
 		replace event=0 if event==.
-		replace weight_c=1 if weight_c==.
+		// original (observed) rows keep their own stset weight; synthetic rows
+		// already carry stset weight x censoring-redistribution weight
+		replace weight_c=_old_w if weight_c==.
+		replace _fw=_old_w if _fw==.
+		drop _old_w
 	}
 
 	// re-add multiple imputations if needed
@@ -154,10 +212,11 @@ program define ghoshlin
 	
 	// link the new dataset to the original using frlink and add "keep" variables
 	preserve // original frame
-	quietly drop if `tstop'==.
+	quietly drop if _t==.
 	quietly frame `framename': {
 		if "`keep'"!="" {
 			local mi_matching=cond("`mi_set'"=="mi","_mi_m ","")
+//			frlink m:1 `id' `mi_matching' tstop, frame(`currentframe' `id' `mi_matching' `tstop') generate(lnk_`currentframe')
 			frlink m:1 `id' `mi_matching' tstop, frame(`currentframe' `id' `mi_matching' _t) generate(lnk_`currentframe')
 			sort `mi_matching' `id' tstart
 			// add all covariates in option "keep", matching each imputation
@@ -189,12 +248,38 @@ program define ghoshlin
 		}
 	}
 	
+	// expandfw: turn every frequency-weighted record into _fw independent copies
+	// (one subject each, new cluster variable repid) and leave only the
+	// censoring-redistribution weight; otherwise just discard the helper
+	local clustvar "`id'"
+	quietly frame `framename': {
+		if "`doexpand'"!="" {
+			capture assert _fw==int(_fw)
+			if _rc {
+				di as error "expandfw requires integer frequency weights."
+				error 198
+			}
+			replace weight_c=weight_c/_fw
+			generate long _row=_n
+			expand _fw
+			bysort _row: generate long _copy=_n
+			egen long repid=group(`id' _copy)
+			drop _row _copy _fw
+			sort repid tstart
+		}
+		else drop _fw
+	}
+	if "`doexpand'"!="" local clustvar "repid"
+
 	frame `framename': noisily `mi_set' stset tstop [pw=weight_c], failure(event) enter(tstart)
 	di as result "Dataset successfully converted to a Fine & Gray or Ghosh-Lin model into frame `framename'."
 	di as result "Database is {it:`mi_set' stset} for the outcome defined by the {it:failure()} option."
 	di as result _n "To stset the data for the failure event, use the following code:"
 	di as result "{it:`mi_set' stset tstop [pw=weight_c], failure(event==1) enter(tstart)}"
-	di as result `"Do not forget to use {it:"vce(cluster `id')"} or {it:"vce(robust)"} in your regression models!"'
+	if "`doexpand'"!="" {
+		di as result "Frequency weights (fweight) were expanded into independent subjects; cluster on {it:repid}."
+	}
+	di as result `"Do not forget to use {it:"vce(cluster `clustvar')"} or {it:"vce(robust)"} in your regression models!"'
 end
 
 program define de_factorize
@@ -223,11 +308,13 @@ end
 //
 // Must be called with the per-subject frame (one row per id, containing
 // each subject's overall follow-up window and event status) as the current
-// frame. It requires four existing double-precision variables in that
-// frame: the subject's last follow-up time ("time_max"), the subject's
-// stset entry/left-truncation time ("time_min"), an indicator for ever
-// having a terminal/competing event, and the failure-event indicator at
-// that last time.
+// frame. It requires five existing variables in that frame: the subject's
+// last follow-up time ("time_max"), the subject's stset entry/left-
+// truncation time ("time_min"), an indicator for ever having a terminal/
+// competing event, the failure-event indicator at that last time, and the
+// subject's stset weight (fweight/pweight; 1 if unweighted), which enters
+// the at-risk and censored counts of the Kaplan-Meier estimator as weighted
+// sums instead of head counts.
 //
 // Stores the grid (columns: time_max, at-risk count, censored count,
 // 1-censored/at-risk, log-IPC increment) into the external Mata matrix
@@ -240,14 +327,15 @@ end
 // has consumed it (see the main ghoshlin program).
 // ---------------------------------------------------------------------------
 program define ghoshlin_grid_weights
-	syntax varlist(min=4 max=4)
+	syntax varlist(min=5 max=5)
 	tokenize `varlist'
 	local timevar  `1'
 	local entryvar `2'
 	local termvar  `3'
 	local failvar  `4'
+	local wvar     `5'
 
-	mata: ghoshlin_store_grid(st_data(.,"`timevar'"), st_data(.,"`entryvar'"), st_data(.,"`termvar'"), st_data(.,"`failvar'"))
+	mata: ghoshlin_store_grid(st_data(.,"`timevar'"), st_data(.,"`entryvar'"), st_data(.,"`termvar'"), st_data(.,"`failvar'"), st_data(.,"`wvar'"))
 end
 
 // ---------------------------------------------------------------------------
@@ -324,9 +412,14 @@ mata:
 // together in one comparison, rather than through hand-built interval
 // boundaries that depended on prior deduplication of a value copied at a
 // different numeric precision (the source of the original tie bug).
+//
+// Weights: `w' is each subject's stset weight. The number at risk and the
+// number censored are weighted sums (for an fweight this is identical to
+// repeating each subject w times; for a pweight it is the weighted
+// Kaplan-Meier estimator of the censoring distribution).
 real matrix ghoshlin_calc_ipcw(real colvector t, real colvector entry,
                                 real colvector term, real colvector fail,
-                                real scalar maxfup)
+                                real colvector w, real scalar maxfup)
 {
 	real colvector cens, ut, natrisk, ncens, invp, lnipc, keepidx, entered
 	real scalar    k, i
@@ -352,8 +445,8 @@ real matrix ghoshlin_calc_ipcw(real colvector t, real colvector entry,
 		// failure/terminal event has already left the risk set, per
 		// "event" first in the tie order)
 		entered    = (entry :< ut[i])
-		natrisk[i] = sum(entered :& ((t :> ut[i]) :| ((t :== ut[i]) :& cens)))
-		ncens[i]   = sum(entered :& (t :== ut[i]) :& cens) // number purely censored exactly at ut[i]
+		natrisk[i] = sum(w :* (entered :& ((t :> ut[i]) :| ((t :== ut[i]) :& cens))))
+		ncens[i]   = sum(w :* (entered :& (t :== ut[i]) :& cens)) // weighted number purely censored exactly at ut[i]
 		if (natrisk[i] > 0) {
 			invp[i]  = 1 - ncens[i]/natrisk[i]
 			lnipc[i] = ln(invp[i])
@@ -387,11 +480,12 @@ real matrix ghoshlin_calc_ipcw(real colvector t, real colvector entry,
 // ghoshlin_calc_expand_num_ext and ghoshlin_store_fill_ext (below) can read
 // back whatever this call last stored.
 void ghoshlin_store_grid(real colvector t, real colvector entry,
-                          real colvector term, real colvector fail)
+                          real colvector term, real colvector fail,
+                          real colvector w)
 {
 	external real matrix ghoshlin__grid
 
-	ghoshlin__grid = ghoshlin_calc_ipcw(t, entry, term, fail, max(t))
+	ghoshlin__grid = ghoshlin_calc_ipcw(t, entry, term, fail, w, max(t))
 }
 
 // Counts, for each subject's own exit time in `t', how many grid points in
