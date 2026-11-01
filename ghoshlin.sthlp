@@ -1,8 +1,9 @@
 {smcl}
-{* *! version 1.2  30sep2026}{...}
+{* *! version 1.3  01nov2026}{...}
 {viewerjumpto "Syntax" "ghoshlin##syntax"}{...}
 {viewerjumpto "Description" "ghoshlin##description"}{...}
 {viewerjumpto "Model considerations" "ghoshlin##considerations"}{...}
+{viewerjumpto "Weights" "ghoshlin##weights"}{...}
 {viewerjumpto "Options" "ghoshlin##options"}{...}
 {viewerjumpto "Remarks" "ghoshlin##remarks"}{...}
 {viewerjumpto "Examples" "ghoshlin##examples"}{...}
@@ -18,7 +19,7 @@
 {p 8 17 2}
 {cmdab:ghoshlin}
 {ifin}
-{cmd:,} frame({it:newframename}[,replace]) failure({it:string}) competing({it:string}) [maxevents({it:integer}) keep({it:varlist}) matchonly({it:varlist})]
+{cmd:,} frame({it:newframename}[,replace]) failure({it:string}) competing({it:string}) [maxevents({it:integer}) keep({it:varlist}) matchonly({it:varlist}) {opt noexp:andfw}]
 
 {synoptset 20 tabbed}{...}
 {synopthdr}
@@ -31,6 +32,10 @@ It needs to be enclosed in quotes or compound double quotes.{p_end}
 {synopt:{opt maxevents}}Maximum number of events per subject to analyze. If not defined, all failure events without upper limit will be analyzed.{p_end}
 {synopt:{opt keep}}Variables kept during dataset transformation.{p_end}
 {synopt:{opt matchonly}}Variables kept during dataset transformation, but without filling the gaps.{p_end}
+{syntab:Weights}
+{synopt:{opt noexp:andfw}}Do not expand frequency weights into independent subjects (see {help ghoshlin##weights:Weights}).{p_end}
+{synoptline}
+{p 4 6 2}Weights are specified in {help stset}, not in {cmd:ghoshlin}; see {help ghoshlin##weights:Weights}.{p_end}
 
 
 {marker description}{...}
@@ -94,6 +99,41 @@ interpret. Thus, the use of endogenous time-varying covariates is discouraged.
 {p_end}
 
 
+{marker weights}{...}
+{title:Weights}
+
+{pstd}
+{cmd:ghoshlin} uses the weights declared to {help stset} ({cmd:fweight}s and {cmd:pweight}s). Weights are not specified in the {cmd:ghoshlin} command itself. The weight 
+of a subject must be constant over the whole follow-up of that subject; otherwise {cmd:ghoshlin} stops with an error.
+{p_end}
+
+{pstd}
+The stset weights enter the Kaplan-Meier estimator of the censoring distribution as weighted counts (number at risk and number censored). For frequency weights this is 
+identical to replicating each subject as many times as its weight; for probability weights it gives the weighted Kaplan-Meier estimator. In the transformed dataset, 
+{it:weight_c} is the product of the subject's stset weight and the censoring redistribution weight (on the observed records, {it:weight_c} equals the stset weight). The 
+transformed dataset is always stset with {cmd:[pw=weight_c]}, because the product is generally not an integer.
+{p_end}
+
+{pstd}
+{ul:Frequency weights:} by default, each record of a frequency weighted subject is replicated as many times as the frequency weight, so that every copy becomes an 
+independent subject. A new identifier variable {it:repid} is created for the copies, and {it:weight_c} then contains only the censoring redistribution weight. Use 
+{opt vce(cluster repid)} in subsequent {cmd:stcox} models in order to obtain correct point estimates and standard errors. Without 
+expansion ({opt noexpandfw}), clustering on the original {it:id} treats all copies of a subject as one cluster; point estimates are the same (exactly with 
+{opt breslow} ties), but the standard errors are not those of a frequency weighted analysis. Frequency weights must be integers for the expansion. The expansion is 
+not done for {help mi} set data (a note is displayed), and it is ignored for data that are not stset with frequency weights.
+{p_end}
+
+{pstd}
+{ul:Probability weights:} no expansion is done, {it:weight_c} carries the product of the probability weight and the redistribution weight, and {opt vce(cluster id)} 
+should be used as for unweighted data.
+{p_end}
+
+{pstd}
+Note that the standard errors from {cmd:stcox} on the transformed dataset (weighted or not) treat the censoring weights as known, i.e. they do not account for the 
+estimation of the censoring distribution.
+{p_end}
+
+
 {marker options}{...}
 {title:Options}
 
@@ -118,6 +158,13 @@ interpret. Thus, the use of endogenous time-varying covariates is discouraged.
 {phang}
 {opt matchonly} Variables kept during dataset transformation, that should not be filled in. If matchonly() contains variables not listed in keep(), those will not be kept.
 
+{dlgtab:Weights}
+
+{phang}
+{opt noexpandfw} switches off the default expansion of frequency weights declared to {help stset} into independent subjects (see {help ghoshlin##weights:Weights}). 
+The frequency weight is then kept as a multiplier in {it:weight_c}. The default (expansion) can also be requested explicitly with the option {opt expandfw}; 
+{opt expandfw} and {opt noexpandfw} may not be combined. Both options are ignored when the data are not stset with frequency weights.
+
 
 {marker remarks}{...}
 {title:Remarks on factor variable notation}
@@ -131,8 +178,8 @@ allowed.{cmd: ghoshlin} interprets them by removing the factor variable notation
 {title:AI disclosure}
 
 {pstd}
-This command was originally developed by a human. Claude AI with human supervision was used for speed-optimization, and to correct the handling of left truncation and 
-ties. The final version of {cmd: ghoshlin} has then been extensively tested and validated by a human.
+This command was originally developed by a human. Claude AI with human supervision was used for speed-optimization, to correct the handling of left truncation and 
+ties, and to add support for stset weights. The final version of {cmd: ghoshlin} has then been extensively tested and validated by a human.
 
 
 {marker examples}{...}
@@ -172,6 +219,21 @@ ties. The final version of {cmd: ghoshlin} has then been extensively tested and 
 {pstd}
 
 {pmore2}{cmd:. frame transformed: stset tstop [pw=weight_c], failure(event) enter(tstart)}{p_end}
+
+	{title:Example 5:} {it:Ghosh-Lin model with frequency weights.}
+	{it:The variable {bf:fw} holds an integer frequency weight that is constant within each subject (here a hypothetical variable).}
+{pstd}
+
+{pmore2}{cmd:. sysuse ghoshlin_example}{p_end}
+{pmore2}{cmd:. stset fup_days [fw=fw], id(ID) failure(event == 1, 2, 3)}{p_end}
+{pmore2}{cmd:. ghoshlin, failure("inlist(event,1,3)") competing("inlist(event,1,2)") keep(age sex diabetes) frame(transformed,replace)}{p_end}
+{pmore2}{cmd:. frame transformed: stcox c.age i.sex i.diabetes, vce(cluster repid) nolog}{p_end}
+
+	{title:Example 6:} {it:Same as example 5, without expanding the frequency weights.}
+{pstd}
+
+{pmore2}{cmd:. ghoshlin, failure("inlist(event,1,3)") competing("inlist(event,1,2)") keep(age sex diabetes) frame(transformed,replace) noexpandfw}{p_end}
+{pmore2}{cmd:. frame transformed: stcox c.age i.sex i.diabetes, vce(cluster ID) nolog}{p_end}
 
 {hline}
 

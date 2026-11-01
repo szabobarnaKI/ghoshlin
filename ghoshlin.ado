@@ -168,7 +168,7 @@ program define ghoshlin
 		// temporary frame and the row-by-row cumulative-sum replace logic.
 		// id itself never enters Mata, so it may be numeric or string.
 		ghoshlin_fill_expanded `time_max' `expand_num' `newgrp', tstart(tstart) tstop(tstop) weight(weight_c)
-		capture mata drop ghoshlin__grid // free the Mata-resident grid now that it has been fully consumed
+		capture mata: ghoshlin_free_grid() // free the Mata-resident grid now that it has been fully consumed
 		drop if weight_c==.
 		// a subject's redistribution weight is relative to their own censoring
 		// probability; multiply by their stset weight (constant per subject)
@@ -212,6 +212,9 @@ program define ghoshlin
 	
 	// link the new dataset to the original using frlink and add "keep" variables
 	preserve // original frame
+	// frlink matches on _t, so observations that are not part of the stset
+	// sample (_t missing, e.g. excluded by stset's if/exp or by missing times)
+	// must be removed from the linked frame; otherwise frlink fails
 	quietly drop if _t==.
 	quietly frame `framename': {
 		if "`keep'"!="" {
@@ -469,6 +472,13 @@ real matrix ghoshlin_calc_ipcw(real colvector t, real colvector entry,
 	return ((ut[keepidx], natrisk[keepidx], ncens[keepidx], invp[keepidx], lnipc[keepidx]))
 }
 
+// Removes the external grid matrix (rmexternal() is the documented way to
+// delete an external global from within Mata; it is silent if it does not exist).
+void ghoshlin_free_grid()
+{
+	(void) rmexternal("ghoshlin__grid")
+}
+
 // Computes the grid via ghoshlin_calc_ipcw (maxfup taken as max(t), so it
 // never needs to be passed through a syntax-parsed Stata option) and stores
 // it into the external Mata matrix ghoshlin__grid, where it stays entirely
@@ -550,13 +560,19 @@ void ghoshlin_store_fill(real colvector t, real colvector en, real colvector new
 
 		gidx = k - en[i] + rank // this row's position in the grid
 
+		// Ghosh & Lin (2002) weight G(t)/G(X) with left-continuous G: for a
+		// row (a,b] it is the product of the censoring factors at grid
+		// points s with X <= s <= a, i.e. it INCLUDES the factor at the
+		// subject's own exit time X and EXCLUDES the factor at the row's
+		// end b
 		if (rank==1) {
 			tstart_out[i] = t[i]
-			csum = lnipc[gidx]
+			csum = 0
+			if (gidx>1) if (ut[gidx-1]==t[i]) csum = lnipc[gidx-1]
 		}
 		else {
 			tstart_out[i] = ut[gidx-1]
-			csum = csum + lnipc[gidx]
+			csum = csum + lnipc[gidx-1]
 		}
 		tstop_out[i]  = ut[gidx]
 		weight_out[i] = exp(csum)
