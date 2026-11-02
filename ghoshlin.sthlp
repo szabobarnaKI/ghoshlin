@@ -192,7 +192,7 @@ ties, and to add support for stset weights. The final version of {cmd: ghoshlin}
 {pstd}
 
 {pmore2}{cmd:. sysuse ghoshlin_example}{p_end}
-{pmore2}{cmd:. stset fup_days, id(ID) failure(event == 1, 2, 3)}{p_end}
+{pmore2}{cmd:. stset fup_days, id(ID) failure(event == 1, 2, 3) exit(time .)}{p_end}
 {pmore2}{cmd:. ghoshlin, failure("inlist(event,1,3)") competing("inlist(event,1,2)") keep(age sex diabetes) frame(transformed,replace)}{p_end}
 {pmore2}{cmd:. frame transformed: stcox c.age i.sex i.diabetes, vce(cluster ID) nolog}{p_end}
 
@@ -201,7 +201,7 @@ ties, and to add support for stset weights. The final version of {cmd: ghoshlin}
 {pstd}
 
 {pmore2}{cmd:. sysuse ghoshlin_example}{p_end}
-{pmore2}{cmd:. stset fup_days, id(ID) failure(event == 1, 2)}{p_end}
+{pmore2}{cmd:. stset fup_days, id(ID) failure(event == 1, 2) exit(time .)}{p_end}
 {pmore2}{cmd:. ghoshlin, failure("event==1") competing("event==2") keep(age sex diabetes) maxevents(1) frame(transformed,replace)}{p_end}
 {pmore2}{cmd:. frame transformed: stcox c.age i.sex i.diabetes, vce(cluster ID) nolog}{p_end}
 
@@ -211,7 +211,7 @@ ties, and to add support for stset weights. The final version of {cmd: ghoshlin}
 {pstd}
 
 {pmore2}{cmd:. sysuse ghoshlin_example}{p_end}
-{pmore2}{cmd:. stset fup_days, id(ID) failure(event == 1, 2)}{p_end}
+{pmore2}{cmd:. stset fup_days, id(ID) failure(event == 1, 2) exit(time .)}{p_end}
 {pmore2}{cmd:. ghoshlin, failure("inlist(event,1)") competing("inlist(event,1,2)") keep(age sex diabetes) maxevents(1) frame(transformed,replace)}{p_end}
 {pmore2}{cmd:. frame transformed: stcox c.age i.sex i.diabetes, vce(cluster ID) nolog}{p_end}
 
@@ -225,7 +225,7 @@ ties, and to add support for stset weights. The final version of {cmd: ghoshlin}
 {pstd}
 
 {pmore2}{cmd:. sysuse ghoshlin_example}{p_end}
-{pmore2}{cmd:. stset fup_days [fw=fw], id(ID) failure(event == 1, 2, 3)}{p_end}
+{pmore2}{cmd:. stset fup_days [fw=fw], id(ID) failure(event == 1, 2, 3) exit(time .)}{p_end}
 {pmore2}{cmd:. ghoshlin, failure("inlist(event,1,3)") competing("inlist(event,1,2)") keep(age sex diabetes) frame(transformed,replace)}{p_end}
 {pmore2}{cmd:. frame transformed: stcox c.age i.sex i.diabetes, vce(cluster repid) nolog}{p_end}
 
